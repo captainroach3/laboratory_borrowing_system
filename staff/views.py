@@ -2,12 +2,13 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from users.permissions import IsAdmin
 from .models import Staff
 from .serializers import StaffSerializer
 
 
 class StaffList(APIView):
+    permission_classes = [IsAdmin]
     def get(self, request):
         staff = Staff.objects.all()
         serializer = StaffSerializer(staff, many=True)
@@ -22,6 +23,7 @@ class StaffList(APIView):
 
 
 class StaffDetail(APIView):
+    permission_classes = [IsAdmin]
     def get(self, request, pk):
         try:
             staff = Staff.objects.get(pk=pk)
@@ -32,6 +34,7 @@ class StaffDetail(APIView):
 
 
 class StaffUpdate(APIView):
+    permission_classes = [IsAdmin]
     def put(self, request, pk):
         try:
             staff = Staff.objects.get(pk=pk)
@@ -45,6 +48,7 @@ class StaffUpdate(APIView):
 
 
 class StaffDelete(APIView):
+    permission_classes = [IsAdmin]
     def delete(self, request, pk):
         try:
             staff = Staff.objects.get(pk=pk)
