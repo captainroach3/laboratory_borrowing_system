@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from users.permissions import IsAdmin
 from .models import Staff
 from .serializers import StaffSerializer
+from rest_framework.permissions import IsAuthenticated
 
 
 class StaffList(APIView):
@@ -23,7 +24,7 @@ class StaffList(APIView):
 
 
 class StaffDetail(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAuthenticated]
     def get(self, request, pk):
         try:
             staff = Staff.objects.get(pk=pk)

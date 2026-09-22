@@ -1,11 +1,13 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import  IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
-from .serializers import UserSerializer
+from .serializers import *
+from .permissions import IsAdmin, IsSelfOrAdmin
+
 
 class UserRegister(APIView):
     def post(self, request):
@@ -31,7 +33,7 @@ class UserLogin(APIView):
 
 
 class UserList(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get(self, request):
         users = User.objects.all()
@@ -48,6 +50,7 @@ class UserList(APIView):
 
 class UserDetail(APIView):
     permission_classes = [IsAuthenticated]
+
     def get(self, request, pk):
         try:
             user = User.objects.get(pk=pk)
@@ -58,13 +61,15 @@ class UserDetail(APIView):
 
 
 class UserUpdate(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSelfOrAdmin]
+
     def put(self, request, pk):
         try:
             user = User.objects.get(pk=pk)
         except User.DoesNotExist:
             return Response(data={'message': 'User does not exist.'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(instance=user, data=request.data)
+        self.check_object_permissions(request, user)
+        serializer = UserUpdateSerializer(instance=user, data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(data=serializer.data)
@@ -72,11 +77,39 @@ class UserUpdate(APIView):
 
 
 class UserDelete(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSelfOrAdmin]
+
     def delete(self, request, pk):
         try:
             user = User.objects.get(pk=pk)
         except User.DoesNotExist:
             return Response(data={'message': 'User does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+        self.check_object_permissions(request, user)
         user.delete()
         return Response(data={'message': 'User deleted.'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class UserRoleUpdate(APIView):
+    permission_classes = [IsAdmin]
+
+    def patch(self, request, pk):
+        try:
+            user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response(data={'message': 'User does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = UserRoleUpdateSerializer(instance=user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(data=serializer.data)
+        return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordChange(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(data={'message': 'Password updated.'})
+        return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)

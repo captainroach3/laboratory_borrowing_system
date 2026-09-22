@@ -14,10 +14,9 @@ class Transaction(models.Model):
         blank=True,
         db_column='approver_id',
     )
-borrow_datetime = models.DateTimeField(auto_now_add=True)
-return_datetime = models.DateTimeField(null=True, blank=True)
-quantity = models.PositiveIntegerField(default=1)
+    borrow_datetime = models.DateTimeField(auto_now_add=True)
+    return_datetime = models.DateTimeField(null=True, blank=True)
+    quantity = models.PositiveIntegerField(default=1)
 
-def __str__(self):
-    return f'Transaction #{self.transaction_id}'
-
+    def __str__(self):
+        return f'Transaction #{self.transaction_id}'
