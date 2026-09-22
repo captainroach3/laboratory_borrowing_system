@@ -1,3 +1,4 @@
+# Added from the existing ERD
 from rest_framework import serializers
 from .models import User
 
