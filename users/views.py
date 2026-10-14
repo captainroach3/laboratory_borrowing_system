@@ -5,7 +5,10 @@ from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
-from .serializers import *
+from .serializers import (
+    UserSerializer, UserUpdateSerializer, UserRoleUpdateSerializer,
+    CurrentUserSerializer, PasswordChangeSerializer,
+)
 from .permissions import IsAdmin, IsSelfOrAdmin
 
 
@@ -69,7 +72,7 @@ class UserUpdate(APIView):
         except User.DoesNotExist:
             return Response(data={'message': 'User does not exist.'}, status=status.HTTP_404_NOT_FOUND)
         self.check_object_permissions(request, user)
-        serializer = UserUpdateSerializer(instance=user, data=request.data)
+        serializer = UserUpdateSerializer(instance=user, data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(data=serializer.data)
@@ -113,3 +116,10 @@ class PasswordChange(APIView):
             serializer.save()
             return Response(data={'message': 'Password updated.'})
         return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class UserMe(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = CurrentUserSerializer(request.user)
+        return Response(serializer.data)    

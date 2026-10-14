@@ -10,4 +10,5 @@ urlpatterns = [
     path('users/password/', PasswordChange.as_view()),
     path('register/', UserRegister.as_view()),
     path('login/', UserLogin.as_view()),
+    path('me/', UserMe.as_view()),
 ]
