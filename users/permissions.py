@@ -16,3 +16,7 @@ class IsSelfOrAdmin(BasePermission):
         if request.user.role == User.Role.ADMIN:
             return True
         return obj.pk == request.user.pk
+
+class IsStaffOrAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in (User.Role.STAFF, User.Role.ADMIN)

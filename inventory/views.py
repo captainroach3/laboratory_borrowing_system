@@ -2,7 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from users.permissions import IsAdmin
+from users.permissions import IsAdmin, IsStaffOrAdmin
 from .models import Inventory
 from .serializers import InventorySerializer
 
@@ -17,7 +17,7 @@ class InventoryList(APIView):
 
 
 class InventoryCreate(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsStaffOrAdmin]
 
     def post(self, request):
         serializer = InventorySerializer(data=request.data)
@@ -40,7 +40,7 @@ class InventoryDetail(APIView):
 
 
 class InventoryUpdate(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsStaffOrAdmin]
 
     def put(self, request, pk):
         try:
@@ -56,7 +56,7 @@ class InventoryUpdate(APIView):
 
 
 class InventoryDelete(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsStaffOrAdmin]
 
     def delete(self, request, pk):
         try:

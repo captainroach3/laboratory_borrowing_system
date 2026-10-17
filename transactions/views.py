@@ -1,14 +1,14 @@
 from django.db import transaction as db_transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from users.permissions import IsAdmin
 from inventory.models import Inventory
+from staff.models import Staff
 from .models import Transaction
-from .serializers import (
-    TransactionSerializer, TransactionCreateSerializer, TransactionUpdateSerializer,
-)
+from .serializers import TransactionSerializer, TransactionCreateSerializer
 from .permissions import IsOwnerStaffOrAdmin, IsStaffOrAdmin
 
 
@@ -19,6 +19,14 @@ class TransactionList(APIView):
         transactions = Transaction.objects.all()
         serializer = TransactionSerializer(transactions, many=True)
         return Response(serializer.data)
+
+
+class MyTransactionList(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        transactions = Transaction.objects.filter(user=request.user)
+        return Response(TransactionSerializer(transactions, many=True).data)
 
 
 class TransactionCreate(APIView):
@@ -45,44 +53,61 @@ class TransactionDetail(APIView):
         return Response(serializer.data)
 
 
-class TransactionUpdate(APIView):
-    
+class TransactionApprove(APIView):
     permission_classes = [IsStaffOrAdmin]
 
-    def put(self, request, pk):
+    def post(self, request, pk):
         with db_transaction.atomic():
             try:
                 transaction = Transaction.objects.select_for_update().get(pk=pk)
             except Transaction.DoesNotExist:
                 return Response(data={'message': 'Transaction does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+            if transaction.approver_id is not None:
+                return Response(data={'message': 'This request is already approved.'}, status=status.HTTP_400_BAD_REQUEST)
+
             item = Inventory.objects.select_for_update().get(pk=transaction.item_name_id)
+            if item.status != Inventory.AVAILABLE:
+                return Response(data={'message': 'This item is not available for borrowing.'}, status=status.HTTP_400_BAD_REQUEST)
+            if transaction.quantity > item.quantity:
+                return Response(
+                    data={'message': f'Not enough stock: {item.quantity} left, {transaction.quantity} requested.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-            serializer = TransactionUpdateSerializer(instance=transaction, data=request.data, partial=True)
-            if not serializer.is_valid():
-                return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-            if 'approver' in serializer.validated_data:
-                if item.status != Inventory.AVAILABLE:
-                    return Response(
-                        data={'message': 'This item is not available for borrowing.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                if transaction.quantity > item.quantity:
-                    return Response(
-                        data={'message': f'Not enough stock: {item.quantity} left, {transaction.quantity} requested.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                item.quantity -= transaction.quantity
-            else:
-                item.quantity += transaction.quantity
-
+            staff, _ = Staff.objects.get_or_create(
+                user=request.user,
+                defaults={'position': request.user.role.title()},
+            )
+            item.quantity -= transaction.quantity
             item.save(update_fields=['quantity'])
-            serializer.save()
-        return Response(data=TransactionSerializer(transaction).data)
+            transaction.approver = staff
+            transaction.save(update_fields=['approver'])
+        return Response(TransactionSerializer(transaction).data)
+
+
+class TransactionReturn(APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def post(self, request, pk):
+        with db_transaction.atomic():
+            try:
+                transaction = Transaction.objects.select_for_update().get(pk=pk)
+            except Transaction.DoesNotExist:
+                return Response(data={'message': 'Transaction does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+            if transaction.approver_id is None:
+                return Response(data={'message': 'This request has not been approved yet.'}, status=status.HTTP_400_BAD_REQUEST)
+            if transaction.return_datetime is not None:
+                return Response(data={'message': 'This item was already returned.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            item = Inventory.objects.select_for_update().get(pk=transaction.item_name_id)
+            item.quantity += transaction.quantity
+            item.save(update_fields=['quantity'])
+            transaction.return_datetime = timezone.now()
+            transaction.save(update_fields=['return_datetime'])
+        return Response(TransactionSerializer(transaction).data)
 
 
 class TransactionDelete(APIView):
-    
     permission_classes = [IsAdmin]
 
     def delete(self, request, pk):
