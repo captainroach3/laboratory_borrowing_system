@@ -7,21 +7,16 @@ import {
   Search, 
   CheckCircle, 
   Clock, 
-  Plus, 
+  Hourglass, 
   Trash2, 
   AlertTriangle, 
   CheckCircle2, 
-  User, 
-  Package,
   UserCheck
 } from 'lucide-react';
 
 export default function TransactionsView() {
   const { user: currentUser, isAdmin } = useAuth();
   const [transactions, setTransactions] = useState([]);
-  const [inventoryList, setInventoryList] = useState([]);
-  const [userList, setUserList] = useState([]);
-  const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -29,7 +24,7 @@ export default function TransactionsView() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Modals
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isApproveOpen, setIsApproveOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
@@ -37,36 +32,11 @@ export default function TransactionsView() {
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // New Transaction Form State
-  const [newTxForm, setNewTxForm] = useState({
-    item_name: '',
-    user: '',
-    quantity: 1,
-    approver: '',
-  });
-
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [txRes, invRes, uRes, stRes] = await Promise.all([
-        api.get('/transactions/'),
-        api.get('/inventory/').catch(() => ({ data: [] })),
-        api.get('/users/').catch(() => ({ data: [] })),
-        api.get('/staff/').catch(() => ({ data: [] })),
-      ]);
-
+      const txRes = await api.get('/transactions/');
       setTransactions(txRes.data || []);
-      setInventoryList(invRes.data || []);
-      setUserList(uRes.data || []);
-      setStaffList(stRes.data || []);
-
-      if (invRes.data?.length > 0 && !newTxForm.item_name) {
-        setNewTxForm((prev) => ({
-          ...prev,
-          item_name: invRes.data[0].item_id,
-          user: uRes.data?.[0]?.user_id || '',
-        }));
-      }
     } catch (err) {
       console.error(err);
       setErrorMsg('Failed to fetch transactions.');
@@ -75,57 +45,51 @@ export default function TransactionsView() {
     }
   };
 
+  // pending = waiting for staff, active = approved and still out, returned = back
+  const getState = (tx) => {
+    if (tx.return_datetime) return 'returned';
+    if (tx.approver) return 'active';
+    return 'pending';
+  };
+
+  const apiError = (err, fallback) => {
+    const data = err.response?.data;
+    return data?.message || (data ? JSON.stringify(data) : fallback);
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
 
   const filteredTransactions = transactions.filter((tx) => {
-    const itemMatch = (tx.item_title || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const userMatch = (
-      (tx.user_full_name || '') + ' ' + (tx.user_username || '')
-    ).toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSearch = itemMatch || userMatch || String(tx.transaction_id).includes(searchTerm);
-
-    const isReturned = Boolean(tx.return_datetime);
-    if (statusFilter === 'active') return matchesSearch && !isReturned;
-    if (statusFilter === 'returned') return matchesSearch && isReturned;
-    return matchesSearch;
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      (tx.item_label || '').toLowerCase().includes(term) ||
+      (tx.user_label || '').toLowerCase().includes(term) ||
+      String(tx.transaction_id).includes(searchTerm);
+    if (statusFilter === 'all') return matchesSearch;
+    return matchesSearch && getState(tx) === statusFilter;
   });
 
-  const handleOpenCreate = () => {
-    setNewTxForm({
-      item_name: inventoryList[0]?.item_id || '',
-      user: userList[0]?.user_id || currentUser.user_id,
-      quantity: 1,
-      approver: staffList[0]?.staff_id || '',
-    });
-    setErrorMsg('');
-    setIsCreateOpen(true);
+  const handleOpenApproveModal = (tx) => {
+    setSelectedTx(tx);
+    setIsApproveOpen(true);
   };
 
-  const handleCreateSubmit = async (e) => {
-    e.preventDefault();
+  const handleConfirmApprove = async () => {
+    if (!selectedTx) return;
     setFormSubmitting(true);
     setErrorMsg('');
     try {
-      const payload = {
-        item_name: parseInt(newTxForm.item_name, 10),
-        user: parseInt(newTxForm.user, 10),
-        quantity: parseInt(newTxForm.quantity, 10),
-        approver: newTxForm.approver ? parseInt(newTxForm.approver, 10) : null,
-      };
-      await api.post('/transactions/create/', payload);
-      setSuccessMsg('Loan record registered successfully.');
-      setIsCreateOpen(false);
+      await api.post(`/transactions/${selectedTx.transaction_id}/approve/`);
+      setSuccessMsg(`Request #${selectedTx.transaction_id} approved. Stock updated.`);
+      setIsApproveOpen(false);
       fetchData();
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error(err);
-      setErrorMsg(
-        err.response?.data?.message ||
-        JSON.stringify(err.response?.data) ||
-        'Error creating transaction.'
-      );
+      setErrorMsg(apiError(err, 'Error approving request.'));
+      setIsApproveOpen(false);
     } finally {
       setFormSubmitting(false);
     }
@@ -139,25 +103,16 @@ export default function TransactionsView() {
   const handleConfirmReturn = async () => {
     if (!selectedTx) return;
     setFormSubmitting(true);
+    setErrorMsg('');
     try {
-      const myStaffRecord = staffList.find((s) => s.user === currentUser.user_id);
-      const approverId = myStaffRecord ? myStaffRecord.staff_id : selectedTx.approver;
-
-      const payload = {
-        item_name: selectedTx.item_name,
-        user: selectedTx.user,
-        quantity: selectedTx.quantity,
-        approver: approverId,
-        return_datetime: new Date().toISOString(),
-      };
-      await api.put(`/transactions/${selectedTx.transaction_id}/update/`, payload);
+      await api.post(`/transactions/${selectedTx.transaction_id}/return/`);
       setSuccessMsg(`Transaction #${selectedTx.transaction_id} marked as returned.`);
       setIsReturnModalOpen(false);
       fetchData();
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error(err);
-      setErrorMsg('Error marking item as returned.');
+      setErrorMsg(apiError(err, 'Error marking item as returned.'));
       setIsReturnModalOpen(false);
     } finally {
       setFormSubmitting(false);
@@ -180,7 +135,7 @@ export default function TransactionsView() {
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error(err);
-      setErrorMsg('Failed to delete transaction.');
+      setErrorMsg(apiError(err, 'Failed to delete transaction.'));
       setIsDeleteOpen(false);
     } finally {
       setFormSubmitting(false);
@@ -198,16 +153,9 @@ export default function TransactionsView() {
             Borrowing Records & Custody Logs
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Monitor active equipment in student/faculty possession, verify returned items, and assign custodians.
+            Approve borrow requests, track equipment currently out, and check items back in.
           </p>
         </div>
-        <button
-          onClick={handleOpenCreate}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow-sm shadow-orange-600/30 transition-all self-start sm:self-auto"
-        >
-          <Plus size={15} />
-          <span>Record Loan</span>
-        </button>
       </div>
 
       {/* Notifications */}
@@ -251,6 +199,16 @@ export default function TransactionsView() {
             All ({transactions.length})
           </button>
           <button
+            onClick={() => setStatusFilter('pending')}
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              statusFilter === 'pending'
+                ? 'bg-sky-600 text-white'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            Pending ({transactions.filter((t) => getState(t) === 'pending').length})
+          </button>
+          <button
             onClick={() => setStatusFilter('active')}
             className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
               statusFilter === 'active'
@@ -258,7 +216,7 @@ export default function TransactionsView() {
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
-            Active ({transactions.filter((t) => !t.return_datetime).length})
+            Active ({transactions.filter((t) => getState(t) === 'active').length})
           </button>
           <button
             onClick={() => setStatusFilter('returned')}
@@ -268,7 +226,7 @@ export default function TransactionsView() {
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
-            Returned ({transactions.filter((t) => Boolean(t.return_datetime)).length})
+            Returned ({transactions.filter((t) => getState(t) === 'returned').length})
           </button>
         </div>
       </div>
@@ -303,20 +261,20 @@ export default function TransactionsView() {
               </thead>
               <tbody className="divide-y divide-zinc-800/50">
                 {filteredTransactions.map((tx) => {
-                  const isReturned = Boolean(tx.return_datetime);
+                  const state = getState(tx);
+                  const isReturned = state === 'returned';
                   return (
                     <tr key={tx.transaction_id} className="hover:bg-zinc-800/30 transition-colors">
                       <td className="px-4 py-3 font-mono text-zinc-400 font-medium">
                         #{tx.transaction_id}
                       </td>
                       <td className="px-4 py-3 font-semibold text-white">
-                        {tx.item_title || `Item #${tx.item_name}`}
+                        {tx.item_label || `Item #${tx.item_name}`}
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-zinc-200 font-medium">
-                          {tx.user_full_name || tx.user_username || `User #${tx.user}`}
+                          {tx.user_label || `User #${tx.user}`}
                         </div>
-                        <div className="text-[10px] text-zinc-500">@{tx.user_username}</div>
                       </td>
                       <td className="px-4 py-3 font-mono text-zinc-300">
                         {tx.quantity}
@@ -335,16 +293,18 @@ export default function TransactionsView() {
                             dateStyle: 'short',
                             timeStyle: 'short',
                           })
-                        ) : (
+                        ) : state === 'active' ? (
                           <span className="text-amber-400/80 italic text-[11px]">
                             Pending check-in
                           </span>
+                        ) : (
+                          <span className="text-zinc-500 text-[11px]">&mdash;</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-zinc-300">
-                        {tx.approver_name ? (
+                        {tx.approver_label ? (
                           <span className="inline-flex items-center gap-1 text-[11px] text-orange-400">
-                            <UserCheck size={11} /> {tx.approver_name}
+                            <UserCheck size={11} /> {tx.approver_label}
                           </span>
                         ) : (
                           <span className="text-zinc-500 text-[11px]">&mdash;</span>
@@ -355,6 +315,10 @@ export default function TransactionsView() {
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                             <CheckCircle size={10} /> Returned
                           </span>
+                        ) : state === 'pending' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                            <Hourglass size={10} /> Pending Approval
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
                             <Clock size={10} /> Active Loan
@@ -363,7 +327,17 @@ export default function TransactionsView() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {!isReturned && (
+                          {state === 'pending' && (
+                            <button
+                              onClick={() => handleOpenApproveModal(tx)}
+                              className="px-2.5 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-semibold transition-all flex items-center gap-1"
+                              title="Approve Request"
+                            >
+                              <CheckCircle size={11} />
+                              <span>Approve</span>
+                            </button>
+                          )}
+                          {state === 'active' && (
                             <button
                               onClick={() => handleOpenReturnModal(tx)}
                               className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-all flex items-center gap-1"
@@ -393,100 +367,40 @@ export default function TransactionsView() {
         )}
       </div>
 
-      {/* CREATE MODAL */}
+      {/* APPROVE MODAL */}
       <Modal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        title="Record New Equipment Loan"
+        isOpen={isApproveOpen}
+        onClose={() => setIsApproveOpen(false)}
+        title="Approve Borrow Request"
+        maxWidth="max-w-md"
       >
-        <form onSubmit={handleCreateSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
-              Select Apparatus *
-            </label>
-            <select
-              required
-              value={newTxForm.item_name}
-              onChange={(e) => setNewTxForm({ ...newTxForm, item_name: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs focus:outline-none focus:border-orange-500"
-            >
-              {inventoryList.map((item) => (
-                <option key={item.item_id} value={item.item_id}>
-                  {item.item_name} ({item.quantity} available, {item.location})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
-                Borrower (User) *
-              </label>
-              <select
-                required
-                value={newTxForm.user}
-                onChange={(e) => setNewTxForm({ ...newTxForm, user: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs focus:outline-none focus:border-orange-500"
-              >
-                {userList.map((u) => (
-                  <option key={u.user_id} value={u.user_id}>
-                    {u.first_name} {u.last_name} (@{u.username})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
-                Quantity *
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={newTxForm.quantity}
-                onChange={(e) => setNewTxForm({ ...newTxForm, quantity: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs focus:outline-none focus:border-orange-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
-              Laboratory Custodian / Approver
-            </label>
-            <select
-              value={newTxForm.approver}
-              onChange={(e) => setNewTxForm({ ...newTxForm, approver: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs focus:outline-none focus:border-orange-500"
-            >
-              <option value="">No approver assigned</option>
-              {staffList.map((st) => (
-                <option key={st.staff_id} value={st.staff_id}>
-                  {st.full_name || st.username} - {st.position}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+        <div className="space-y-3.5">
+          <p className="text-xs text-zinc-300">
+            Approve{' '}
+            <strong className="text-white">{selectedTx?.user_label || 'the borrower'}</strong>'s request for{' '}
+            <strong className="text-white">
+              {selectedTx?.quantity}x "{selectedTx?.item_label}"
+            </strong>
+            ? Stock will go down by {selectedTx?.quantity}.
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
             <button
               type="button"
-              onClick={() => setIsCreateOpen(false)}
+              onClick={() => setIsApproveOpen(false)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-white"
             >
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleConfirmApprove}
               disabled={formSubmitting}
-              className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow-sm shadow-orange-600/30 transition-all disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-all disabled:opacity-50"
             >
-              {formSubmitting ? 'Recording...' : 'Register Loan'}
+              {formSubmitting ? 'Approving...' : 'Confirm Approval'}
             </button>
           </div>
-        </form>
+        </div>
       </Modal>
 
       {/* CHECK-IN RETURN MODAL */}
@@ -499,9 +413,9 @@ export default function TransactionsView() {
         <div className="space-y-3.5">
           <p className="text-xs text-zinc-300">
             Confirm that{' '}
-            <strong className="text-white">{selectedTx?.user_full_name || 'the borrower'}</strong> has returned{' '}
+            <strong className="text-white">{selectedTx?.user_label || 'the borrower'}</strong> has returned{' '}
             <strong className="text-white">
-              {selectedTx?.quantity}x "{selectedTx?.item_title}"
+              {selectedTx?.quantity}x "{selectedTx?.item_label}"
             </strong>?
           </p>
           <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs space-y-1">

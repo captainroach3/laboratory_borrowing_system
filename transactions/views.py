@@ -124,4 +124,4 @@ class TransactionDelete(APIView):
                 item.save(update_fields=['quantity'])
 
             transaction.delete()
-        return Response(data={'message': 'Transaction deleted.'}, status=status.HTTP_204_NO_CONTENT)
+        return Response(data={'message': 'Transaction deleted.'}, status=status.HTTP_200_OK)

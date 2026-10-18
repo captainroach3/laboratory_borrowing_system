@@ -65,4 +65,4 @@ class InventoryDelete(APIView):
             return Response(data={'message': 'Item does not exist.'}, status=status.HTTP_404_NOT_FOUND)
 
         item.delete()
-        return Response(data={'message': 'Item deleted.'}, status=status.HTTP_204_NO_CONTENT)
+        return Response(data={'message': 'Item deleted.'}, status=status.HTTP_200_OK)

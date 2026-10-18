@@ -10,6 +10,7 @@ from .models import Transaction
 
 class BorrowFlowTests(APITestCase):
 
+
     def setUp(self):
         self.admin = User.objects.create_user(
             username='admin1', password='AdminPass123',

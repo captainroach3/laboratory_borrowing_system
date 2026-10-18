@@ -5,7 +5,6 @@ import {
   Users, 
   Shield, 
   Search, 
-  Briefcase, 
   Trash2, 
   CheckCircle2, 
   AlertTriangle,
@@ -14,20 +13,16 @@ import {
 
 export default function UsersCrudView() {
   const [users, setUsers] = useState([]);
-  const [staffRecords, setStaffRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
 
   // Modals
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
-  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState(null);
   const [newRole, setNewRole] = useState('VIEWER');
-  const [staffPosition, setStaffPosition] = useState('');
-  const [existingStaffId, setExistingStaffId] = useState(null);
 
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -36,12 +31,8 @@ export default function UsersCrudView() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [uRes, stRes] = await Promise.all([
-        api.get('/users/'),
-        api.get('/staff/').catch(() => ({ data: [] })),
-      ]);
+      const uRes = await api.get('/users/');
       setUsers(uRes.data || []);
-      setStaffRecords(stRes.data || []);
     } catch (err) {
       console.error(err);
       setErrorMsg('Failed to load user accounts.');
@@ -90,49 +81,6 @@ export default function UsersCrudView() {
     }
   };
 
-  const handleOpenStaffModal = (u) => {
-    setSelectedUser(u);
-    const existing = staffRecords.find((s) => s.user === u.user_id);
-    if (existing) {
-      setExistingStaffId(existing.staff_id);
-      setStaffPosition(existing.position);
-    } else {
-      setExistingStaffId(null);
-      setStaffPosition('Laboratory Custodian');
-    }
-    setErrorMsg('');
-    setIsStaffModalOpen(true);
-  };
-
-  const handleStaffSubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedUser || !staffPosition.trim()) return;
-    setFormSubmitting(true);
-    setErrorMsg('');
-    try {
-      if (existingStaffId) {
-        await api.put(`/staff/${existingStaffId}/update/`, {
-          user: selectedUser.user_id,
-          position: staffPosition.trim(),
-        });
-      } else {
-        await api.post('/staff/', {
-          user: selectedUser.user_id,
-          position: staffPosition.trim(),
-        });
-      }
-      setSuccessMsg(`Staff designation updated for @${selectedUser.username}!`);
-      setIsStaffModalOpen(false);
-      fetchData();
-      setTimeout(() => setSuccessMsg(''), 4000);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg('Failed to save staff position.');
-    } finally {
-      setFormSubmitting(false);
-    }
-  };
-
   const handleOpenDelete = (u) => {
     setSelectedUser(u);
     setIsDeleteModalOpen(true);
@@ -149,7 +97,7 @@ export default function UsersCrudView() {
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error(err);
-      setErrorMsg('Cannot delete user. Existing transactions may be linked.');
+      setErrorMsg(err.response?.data?.message || 'Failed to delete user.');
       setIsDeleteModalOpen(false);
     } finally {
       setFormSubmitting(false);
@@ -190,7 +138,7 @@ export default function UsersCrudView() {
             Users & Laboratory Custodians
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Manage student, faculty, and administrative accounts, system privileges, and staff designations.
+            Manage student, faculty, and administrative accounts and their system roles.
           </p>
         </div>
       </div>
@@ -282,13 +230,11 @@ export default function UsersCrudView() {
                   <th className="px-4 py-3">Classification</th>
                   <th className="px-4 py-3">Department</th>
                   <th className="px-4 py-3">System Role</th>
-                  <th className="px-4 py-3">Custody Title</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/50">
                 {filteredUsers.map((u) => {
-                  const staffRec = staffRecords.find((s) => s.user === u.user_id);
                   return (
                     <tr key={u.user_id} className="hover:bg-zinc-800/30 transition-colors">
                       <td className="px-4 py-3 font-mono text-zinc-400 font-medium">
@@ -312,15 +258,6 @@ export default function UsersCrudView() {
                       <td className="px-4 py-3">
                         {getRoleBadge(u.role)}
                       </td>
-                      <td className="px-4 py-3">
-                        {staffRec ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-orange-400 font-medium">
-                            <Briefcase size={11} /> {staffRec.position}
-                          </span>
-                        ) : (
-                          <span className="text-zinc-500 text-[11px]">&mdash;</span>
-                        )}
-                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
@@ -332,17 +269,6 @@ export default function UsersCrudView() {
                             <span>Role</span>
                           </button>
                           
-                          {(u.role === 'STAFF' || u.role === 'ADMIN') && (
-                            <button
-                              onClick={() => handleOpenStaffModal(u)}
-                              className="px-2 py-1 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 text-[11px] font-medium transition-all flex items-center gap-1"
-                              title="Set Position"
-                            >
-                              <Briefcase size={11} className="text-amber-400" />
-                              <span>Position</span>
-                            </button>
-                          )}
-
                           <button
                             onClick={() => handleOpenDelete(u)}
                             className="p-1 rounded text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
@@ -409,47 +335,6 @@ export default function UsersCrudView() {
         </form>
       </Modal>
 
-      {/* STAFF POSITION MODAL */}
-      <Modal
-        isOpen={isStaffModalOpen}
-        onClose={() => setIsStaffModalOpen(false)}
-        title={`Staff Position: @${selectedUser?.username}`}
-        maxWidth="max-w-md"
-      >
-        <form onSubmit={handleStaffSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
-              Position Designation *
-            </label>
-            <input
-              type="text"
-              required
-              value={staffPosition}
-              onChange={(e) => setStaffPosition(e.target.value)}
-              placeholder="e.g. CEA Laboratory Custodian, Technician"
-              className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs focus:outline-none focus:border-orange-500"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
-            <button
-              type="button"
-              onClick={() => setIsStaffModalOpen(false)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={formSubmitting}
-              className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow-sm shadow-orange-600/30 transition-all disabled:opacity-50"
-            >
-              {formSubmitting ? 'Saving...' : 'Save Position'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
       {/* DELETE MODAL */}
       <Modal
         isOpen={isDeleteModalOpen}
@@ -461,6 +346,7 @@ export default function UsersCrudView() {
           <p className="text-xs text-zinc-300">
             Are you sure you want to delete user{' '}
             <strong className="text-white">@{selectedUser?.username}</strong>?
+            This also removes all of their borrow records.
           </p>
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
             <button

@@ -1,35 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/client';
-import { useAuth } from '../../context/AuthContext';
-import Modal from '../../components/Modal';
 import { 
   ClipboardList, 
   Clock, 
   CheckCircle2, 
   AlertTriangle, 
-  RotateCcw, 
+  Hourglass, 
   MapPin, 
   CheckCircle, 
   Package
 } from 'lucide-react';
 
 export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
-  const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Return modal state
-  const [selectedTx, setSelectedTx] = useState(null);
-  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [locations, setLocations] = useState({});
 
   const fetchTransactions = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/transactions/');
+      const [res, invRes] = await Promise.all([
+        api.get('/transactions/mine/'),
+        api.get('/inventory/').catch(() => ({ data: [] })),
+      ]);
       setTransactions(res.data || []);
+      const map = {};
+      (invRes.data || []).forEach((i) => { map[i.item_id] = i.location; });
+      setLocations(map);
     } catch (err) {
       console.error(err);
       setErrorMsg('Failed to load your borrow history.');
@@ -42,37 +41,10 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
     fetchTransactions();
   }, []);
 
-  const activeBorrows = transactions.filter((t) => !t.return_datetime);
+  // pending = waiting for staff approval, active = approved and still with you, returned = back
+  const pendingRequests = transactions.filter((t) => !t.return_datetime && !t.approver);
+  const activeBorrows = transactions.filter((t) => !t.return_datetime && t.approver);
   const returnedBorrows = transactions.filter((t) => Boolean(t.return_datetime));
-
-  const handleOpenReturnModal = (tx) => {
-    setSelectedTx(tx);
-    setIsReturnModalOpen(true);
-  };
-
-  const handleConfirmReturn = async () => {
-    if (!selectedTx) return;
-    setSubmitting(true);
-    try {
-      const payload = {
-        item_name: selectedTx.item_name,
-        user: selectedTx.user,
-        quantity: selectedTx.quantity,
-        return_datetime: new Date().toISOString(),
-      };
-      await api.put(`/transactions/${selectedTx.transaction_id}/update/`, payload);
-      setSuccessMsg(`"${selectedTx.item_title || 'Apparatus'}" marked as returned!`);
-      setIsReturnModalOpen(false);
-      fetchTransactions();
-      setTimeout(() => setSuccessMsg(''), 4000);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg('Failed to check in item.');
-      setIsReturnModalOpen(false);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -85,7 +57,7 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
             My Active Loans & Custody History
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Apparatus currently in your custody and past returned items.
+            Your requests, equipment currently with you, and past returns.
           </p>
         </div>
         <button
@@ -98,12 +70,6 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
       </div>
 
       {/* Notifications */}
-      {successMsg && (
-        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
-          <CheckCircle2 size={15} />
-          <span>{successMsg}</span>
-        </div>
-      )}
       {errorMsg && (
         <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
           <AlertTriangle size={15} />
@@ -111,8 +77,63 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
         </div>
       )}
 
-      {/* SECTION 1: ACTIVE BORROWS */}
+      {/* SECTION 0: PENDING REQUESTS */}
       <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Hourglass size={15} className="text-sky-400" />
+          <h3 className="text-xs font-semibold text-white tracking-wide uppercase">
+            Waiting for Staff Approval ({pendingRequests.length})
+          </h3>
+        </div>
+
+        {loading ? (
+          <div className="py-8 text-center text-xs text-zinc-500 bg-[#12141c] rounded-xl border border-zinc-800">
+            Loading requests...
+          </div>
+        ) : pendingRequests.length === 0 ? (
+          <div className="py-8 text-center text-xs text-zinc-500 bg-[#12141c] rounded-xl border border-zinc-800">
+            No pending requests.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {pendingRequests.map((tx) => (
+              <div
+                key={tx.transaction_id}
+                className="p-4 rounded-xl bg-[#12141c] border border-sky-500/30"
+              >
+                <div className="flex items-start justify-between">
+                  <span className="font-mono text-xs text-orange-400 font-semibold">
+                    Request #{tx.transaction_id}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    <Hourglass size={10} /> Pending Approval
+                  </span>
+                </div>
+                <h4 className="text-xs font-bold text-white mt-1.5">
+                  {tx.item_label || `Equipment #${tx.item_name}`}
+                </h4>
+                <div className="mt-2.5 space-y-1 text-xs text-zinc-400">
+                  <div>
+                    Quantity: <strong className="text-zinc-200">{tx.quantity} unit(s)</strong>
+                  </div>
+                  <div>
+                    Requested On:{' '}
+                    <strong className="text-zinc-200">
+                      {tx.borrow_datetime ? new Date(tx.borrow_datetime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'}
+                    </strong>
+                  </div>
+                </div>
+                <p className="mt-3 pt-2.5 border-t border-zinc-800 text-[11px] text-zinc-500">
+                  Staff will approve this before you can pick it up.
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* SECTION 1: ACTIVE BORROWS */}
+      <div className="pt-2">
         <div className="flex items-center gap-2 mb-3">
           <Clock size={15} className="text-amber-400" />
           <h3 className="text-xs font-semibold text-white tracking-wide uppercase">
@@ -146,7 +167,7 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
                   </div>
 
                   <h4 className="text-xs font-bold text-white mt-1.5">
-                    {tx.item_title || `Equipment #${tx.item_name}`}
+                    {tx.item_label || `Equipment #${tx.item_name}`}
                   </h4>
 
                   <div className="mt-2.5 space-y-1 text-xs text-zinc-400">
@@ -159,10 +180,10 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
                         {tx.borrow_datetime ? new Date(tx.borrow_datetime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'}
                       </strong>
                     </div>
-                    {tx.item_location && (
+                    {locations[tx.item_name] && (
                       <div className="flex items-center gap-1">
                         <MapPin size={11} className="text-zinc-500" />
-                        <span>Return location: {tx.item_location}</span>
+                        <span>Return location: {locations[tx.item_name]}</span>
                       </div>
                     )}
                   </div>
@@ -172,15 +193,6 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
                   <span className="text-[11px] text-zinc-500">
                     Return to custodian for check-in
                   </span>
-                  {(user?.role === 'STAFF' || user?.role === 'ADMIN') && (
-                    <button
-                      onClick={() => handleOpenReturnModal(tx)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-all"
-                    >
-                      <RotateCcw size={12} />
-                      <span>Check In (Staff)</span>
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -222,7 +234,7 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
                         #{tx.transaction_id}
                       </td>
                       <td className="px-4 py-3 font-medium text-white">
-                        {tx.item_title || `Equipment #${tx.item_name}`}
+                        {tx.item_label || `Equipment #${tx.item_name}`}
                       </td>
                       <td className="px-4 py-3 text-zinc-300 font-mono">
                         {tx.quantity}
@@ -246,40 +258,6 @@ export default function MyBorrowHistoryView({ onNavigateToCatalog }) {
           )}
         </div>
       </div>
-
-      {/* CONFIRM RETURN MODAL */}
-      <Modal
-        isOpen={isReturnModalOpen}
-        onClose={() => setIsReturnModalOpen(false)}
-        title="Check-in Returned Equipment"
-        maxWidth="max-w-md"
-      >
-        <div className="space-y-3.5">
-          <p className="text-xs text-zinc-300">
-            Confirm check-in of{' '}
-            <strong className="text-white">
-              {selectedTx?.quantity}x "{selectedTx?.item_title || 'Apparatus'}"
-            </strong>?
-          </p>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
-            <button
-              type="button"
-              onClick={() => setIsReturnModalOpen(false)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirmReturn}
-              disabled={submitting}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all disabled:opacity-50"
-            >
-              {submitting ? 'Checking in...' : 'Confirm Return'}
-            </button>
-          </div>
-        </div>
-      </Modal>
 
     </div>
   );

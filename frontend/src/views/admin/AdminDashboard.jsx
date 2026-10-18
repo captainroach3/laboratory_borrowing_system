@@ -40,7 +40,7 @@ export default function AdminDashboard({ onNavigate }) {
       const transactions = transRes.data || [];
       const users = userRes.data || [];
 
-      const activeBorrows = transactions.filter((t) => !t.return_datetime).length;
+      const activeBorrows = transactions.filter((t) => !t.return_datetime && t.approver).length;
       const maintenanceCount = items.filter((i) => i.status === 'maintenance').length;
       const totalQuantity = items.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
 
@@ -71,7 +71,7 @@ export default function AdminDashboard({ onNavigate }) {
       {/* Minimalist Header Banner with CSU CEA Emblem */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-[#12141c] border border-zinc-800">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 shrink-0 rounded-full p-0.5 bg-gradient-to-tr from-orange-600 to-amber-500 shadow-md shadow-orange-500/10 hidden sm:block">
+          <div className="w-12 h-12 shrink-0 rounded-full p-0.5 bg-linear-to-tr from-orange-600 to-amber-500 shadow-md shadow-orange-500/10 hidden sm:block">
             <img
               src="/logo.png"
               alt="CSU CEA"
@@ -238,8 +238,8 @@ export default function AdminDashboard({ onNavigate }) {
                 {recentTransactions.map((tx) => (
                   <tr key={tx.transaction_id} className="hover:bg-zinc-800/30 transition-colors">
                     <td className="px-3.5 py-3 font-mono font-medium text-zinc-400">#{tx.transaction_id}</td>
-                    <td className="px-3.5 py-3 font-medium text-white">{tx.item_title || `Item #${tx.item_name}`}</td>
-                    <td className="px-3.5 py-3 text-zinc-300">{tx.user_full_name || tx.user_username || `User #${tx.user}`}</td>
+                    <td className="px-3.5 py-3 font-medium text-white">{tx.item_label || `Item #${tx.item_name}`}</td>
+                    <td className="px-3.5 py-3 text-zinc-300">{tx.user_label || `User #${tx.user}`}</td>
                     <td className="px-3.5 py-3 text-zinc-400">
                       {tx.borrow_datetime ? new Date(tx.borrow_datetime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'}
                     </td>
@@ -248,6 +248,10 @@ export default function AdminDashboard({ onNavigate }) {
                       {tx.return_datetime ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           <CheckCircle size={10} /> Returned
+                        </span>
+                      ) : !tx.approver ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                          <Clock size={10} /> Pending Approval
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">

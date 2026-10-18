@@ -91,7 +91,7 @@ class UserDelete(APIView):
             return Response(data={'message': 'User does not exist.'}, status=status.HTTP_404_NOT_FOUND)
         self.check_object_permissions(request, user)
         user.delete()
-        return Response(data={'message': 'User deleted.'}, status=status.HTTP_204_NO_CONTENT)
+        return Response(data={'message': 'User deleted.'}, status=status.HTTP_200_OK)
 
 
 class UserRoleUpdate(APIView):

@@ -4,3 +4,4 @@ __pycache.__/
 .env
 .idea/
 db.sqlite3
+node_modules/

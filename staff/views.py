@@ -56,4 +56,4 @@ class StaffDelete(APIView):
         except Staff.DoesNotExist:
             return Response(data={'message': 'Staff does not exist.'}, status=status.HTTP_404_NOT_FOUND)
         staff.delete()
-        return Response(data={'message': 'Staff deleted.'}, status=status.HTTP_204_NO_CONTENT)
+        return Response(data={'message': 'Staff deleted.'}, status=status.HTTP_200_OK)

@@ -76,11 +76,10 @@ export default function BorrowCatalogView({ onNavigateToHistory }) {
     try {
       const payload = {
         item_name: selectedItem.item_id,
-        user: user.user_id,
         quantity: parseInt(borrowQuantity, 10),
       };
       await api.post('/transactions/create/', payload);
-      setSuccessMsg(`Successfully borrowed ${borrowQuantity}x "${selectedItem.item_name}"!`);
+      setSuccessMsg(`Request sent for ${borrowQuantity}x "${selectedItem.item_name}". Staff will approve it soon.`);
       setIsBorrowModalOpen(false);
       fetchData();
       setTimeout(() => setSuccessMsg(''), 5000);
@@ -102,7 +101,7 @@ export default function BorrowCatalogView({ onNavigateToHistory }) {
       {/* CSU CEA Minimalist Header Banner */}
       <div className="p-5 rounded-2xl bg-[#12141c] border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 shrink-0 rounded-full p-0.5 bg-gradient-to-tr from-orange-600 to-amber-500 shadow-md shadow-orange-500/10">
+          <div className="w-12 h-12 shrink-0 rounded-full p-0.5 bg-linear-to-tr from-orange-600 to-amber-500 shadow-md shadow-orange-500/10">
             <img
               src="/logo.png"
               alt="CSU CEA"
@@ -256,7 +255,7 @@ export default function BorrowCatalogView({ onNavigateToHistory }) {
                         : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
                     }`}
                   >
-                    <span>{isAvailable ? 'Borrow Apparatus' : 'Currently Unavailable'}</span>
+                    <span>{isAvailable ? 'Request to Borrow' : 'Currently Unavailable'}</span>
                     {isAvailable && <ArrowRight size={13} />}
                   </button>
                 </div>
@@ -291,7 +290,7 @@ export default function BorrowCatalogView({ onNavigateToHistory }) {
 
           <div>
             <label className="block text-xs font-medium text-zinc-300 mb-1">
-              Quantity to Borrow *
+              Quantity to Request *
             </label>
             <input
               type="number"
@@ -317,7 +316,7 @@ export default function BorrowCatalogView({ onNavigateToHistory }) {
               disabled={formSubmitting}
               className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow-sm shadow-orange-600/30 transition-all disabled:opacity-50"
             >
-              {formSubmitting ? 'Submitting...' : 'Confirm Borrow'}
+              {formSubmitting ? 'Sending...' : 'Send Request'}
             </button>
           </div>
         </form>
